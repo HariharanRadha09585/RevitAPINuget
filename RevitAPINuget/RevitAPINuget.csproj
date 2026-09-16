@@ -1,0 +1,35 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <Authors>Hariharan Radha</Authors>
+    <Company>Hariharan Radha</Company>
+    <Description>Helper methods for Autodesk Revit API development.</Description>
+    <GeneratePackageOnBuild>True</GeneratePackageOnBuild>
+    <PackageId>HariharanRadha.RevitAPI.Helpers</PackageId>
+    <Title>HariharanRadha.RevitAPI.Helpers</Title>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|AnyCPU'">
+    <NoWarn>1701;1702;MSB3277;MSB3270</NoWarn>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|AnyCPU'">
+    <NoWarn>1701;1702;MSB3277;MSB3270</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Reference Include="RevitAPI">
+      <HintPath>..\..\..\..\..\..\Program Files\Autodesk\Revit 2027\RevitAPI.dll</HintPath>
+    </Reference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <Folder Include="Families\" />
+    <Folder Include="Parameters\" />
+    <Folder Include="Sheets\" />
+  </ItemGroup>
+
+</Project>
