@@ -996,7 +996,371 @@ Computational Design
 BIM Automation
 AEC Software Development
 ```
+# 🧠 Key Learnings & Troubleshooting
 
+While creating and testing this Revit API NuGet package, I encountered a few important issues.
+
+This section documents those problems, why they happened, and how they were resolved.
+
+The goal is to help other Revit API developers avoid the same mistakes.
+
+---
+
+## ⚠️ Issue 1 — NuGet Package Works in Visual Studio but Fails in Revit
+
+After installing the NuGet package in a Revit add-in project, the helper methods were available in Visual Studio and the project compiled successfully.
+
+For example:
+
+```csharp
+using HariharanRadha.RevitAPI.Helpers.Elements;
+```
+
+and:
+
+```csharp
+string name = ElementHelper.GetElementName(element);
+```
+
+worked correctly during development.
+
+However, when the command was executed inside Autodesk Revit, Revit reported an error similar to:
+
+```text
+Revit could not complete the external command.
+
+Could not load file or assembly
+'RevitAPINuget, Version=1.0.0.0'
+
+The system cannot find the file specified.
+```
+
+At first, this can be confusing because:
+
+```text
+NuGet Package Installed     ✅
+Code Compilation            ✅
+IntelliSense                ✅
+Build                       ✅
+Execution inside Revit      ❌
+```
+
+---
+
+## 🔍 What Was the Problem?
+
+The NuGet package was available to the project during compilation, but its DLL was not being copied to the Revit add-in output directory.
+
+The output directory contained files such as:
+
+```text
+RevitAPINugetTest.dll
+RevitAPINugetTest.pdb
+RevitAPINugetTest.deps.json
+```
+
+but the NuGet library DLL was missing.
+
+Conceptually, the Revit add-in depended on:
+
+```text
+Revit
+  ↓
+RevitAPINugetTest.dll
+  ↓
+HariharanRadha.RevitAPI.Helpers.dll
+```
+
+When Revit loaded:
+
+```text
+RevitAPINugetTest.dll
+```
+
+the .NET runtime also needed to locate the helper assembly.
+
+If that dependency was not present in the deployed output, the add-in could compile successfully but fail at runtime.
+
+---
+
+## ✅ Solution
+
+The following property was added to the **consuming Revit add-in project's `.csproj` file**:
+
+```xml
+<CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+```
+
+For example:
+
+```xml
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+
+    <TargetFramework>net10.0-windows</TargetFramework>
+
+    <ImplicitUsings>enable</ImplicitUsings>
+
+    <Nullable>enable</Nullable>
+
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+
+  </PropertyGroup>
+
+</Project>
+```
+
+After adding this property:
+
+1. Clean the solution.
+2. Delete the `bin` and `obj` folders if necessary.
+3. Restore NuGet packages.
+4. Rebuild the solution.
+5. Verify the output directory.
+
+The required NuGet dependency should now be copied into the output.
+
+Example:
+
+```text
+bin
+└── Debug
+    └── net10.0-windows
+        │
+        ├── RevitAPINugetTest.dll
+        ├── RevitAPINugetTest.pdb
+        ├── RevitAPINugetTest.deps.json
+        │
+        └── HariharanRadha.RevitAPI.Helpers.dll
+```
+
+The Revit add-in can now locate the helper library at runtime.
+
+---
+
+## 💡 What Does `CopyLocalLockFileAssemblies` Do?
+
+The property:
+
+```xml
+<CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+```
+
+instructs the .NET SDK to copy resolved NuGet package runtime assemblies into the project's output directory.
+
+This is particularly important for Revit add-ins because Revit loads the add-in DLL from its deployment location.
+
+Any additional assemblies required by the add-in must also be available where the .NET runtime can resolve them.
+
+Without the helper DLL:
+
+```text
+Revit
+  ↓
+MyPlugin.dll
+  ↓
+❌ Helper DLL not found
+```
+
+With the dependency copied:
+
+```text
+Revit
+  ↓
+MyPlugin.dll
+  ↓
+HariharanRadha.RevitAPI.Helpers.dll
+  ↓
+Helper Methods
+```
+
+---
+
+## 🎯 Important Learning
+
+One of the most important lessons from this issue is:
+
+> **A successful build does not guarantee that a Revit add-in has all the assemblies required at runtime.**
+
+There are two different stages to consider:
+
+```text
+Compile Time
+    ↓
+Can Visual Studio find the referenced package?
+    ↓
+Build Successful
+```
+
+and:
+
+```text
+Runtime
+    ↓
+Revit loads the add-in
+    ↓
+.NET resolves referenced assemblies
+    ↓
+Are all required DLLs available?
+```
+
+Both must work correctly.
+
+When troubleshooting a Revit error such as:
+
+```text
+Could not load file or assembly...
+```
+
+one of the first things to check should therefore be the add-in's output/deployment directory.
+
+Verify that all required custom dependency DLLs are present.
+
+---
+
+## ⚠️ Issue 2 — Do Not Copy Autodesk RevitAPI.dll With the Package
+
+The helper library references:
+
+```text
+RevitAPI.dll
+```
+
+because classes such as:
+
+```csharp
+Element
+View
+ViewSheet
+Document
+Parameter
+XYZ
+```
+
+come from Autodesk Revit API.
+
+However, `RevitAPI.dll` should not be treated like our own helper dependency.
+
+The project therefore uses:
+
+```xml
+<Reference Include="RevitAPI">
+
+  <HintPath>
+    C:\Program Files\Autodesk\Revit 2027\RevitAPI.dll
+  </HintPath>
+
+  <Private>false</Private>
+
+</Reference>
+```
+
+The important part is:
+
+```xml
+<Private>false</Private>
+```
+
+This prevents `RevitAPI.dll` from being copied as one of our library's local assemblies.
+
+The intended relationship is:
+
+```text
+Autodesk Revit
+     │
+     ├── RevitAPI.dll
+     │
+     └── Loads MyPlugin.dll
+                    │
+                    └── HariharanRadha.RevitAPI.Helpers.dll
+```
+
+Revit provides its own API assemblies.
+
+Our NuGet package provides only our reusable helper functionality.
+
+---
+
+## ⚠️ Issue 3 — Published NuGet Versions Cannot Be Replaced
+
+Another important learning during this project was NuGet package versioning.
+
+After publishing:
+
+```text
+HariharanRadha.RevitAPI.Helpers
+1.0.1
+```
+
+attempting to upload another package with:
+
+```text
+Package ID : HariharanRadha.RevitAPI.Helpers
+Version    : 1.0.1
+```
+
+results in an error similar to:
+
+```text
+A package with ID 'HariharanRadha.RevitAPI.Helpers'
+and version '1.0.1' already exists and cannot be modified.
+```
+
+This is expected NuGet behavior.
+
+A published package version is immutable.
+
+Instead of replacing:
+
+```text
+1.0.1
+```
+
+create a new version:
+
+```text
+1.0.1
+   ↓
+1.0.2
+```
+
+Update:
+
+```xml
+<Version>1.0.2</Version>
+```
+
+and generate the package again:
+
+```powershell
+dotnet pack -c Release
+```
+
+This produces:
+
+```text
+HariharanRadha.RevitAPI.Helpers.1.0.2.nupkg
+```
+
+which can then be published as a new version.
+
+---
+
+# 📋 Key Takeaways
+
+The main lessons learned while building this project are:
+
+| Learning | Key Point |
+|---|---|
+| Build vs Runtime | Successful compilation does not guarantee successful execution inside Revit |
+| NuGet Dependencies | Required package DLLs must be available when Revit loads the add-in |
+| `CopyLocalLockFileAssemblies` | Can be used to copy resolved NuGet runtime assemblies to the output directory |
+| RevitAPI.dll | Reference it for compilation, but do not package it as your own library |
+| `Private=false` | Prevents the Revit API assembly from being copied locally |
+| Package Versioning | A published NuGet version cannot be overwritten |
+| Semantic Versioning | Publish fixes and features using a new package version |
+| Output Verification | Always inspect the final Revit add-in deployment directory |
 ---
 
 # 🤝 Contributions
